@@ -1,5 +1,5 @@
 # EmeraldEye
-Python3 Command and Control Implimentation
+Python3 TLS Reverse Shell Implimentation
 
 # Communication Flow
 1. server is started - generates its own TLS PEM
