@@ -2,6 +2,7 @@ import socket
 import threading
 from OpenSSL import crypto
 import ssl
+import time
 
 KNOCK_PORT = 31415
 TLS_PORT = 31416
@@ -149,6 +150,7 @@ def main():
             if len(t.ping_threads) > 0:
                 num = input("Number of box you want to connect to:")
                 addy = keys[int(num)]
+                time.sleep(0.025)
                 t.send_start(addy)
                 t.handle_agent()
             else:

